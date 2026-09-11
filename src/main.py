@@ -65,12 +65,20 @@ def run_scrape_cycle(
     ece_filter: ECEFilter,
     db: Database,
     notifier: DiscordNotifier,
+    config: Dict,
     dry_run: bool = False,
 ):
     logger.info("================ Starting Scrape Cycle ================")
     total_found = 0
     total_matched = 0
     total_new = 0
+
+    scraper_cfg = config.get("scraper", {})
+    quiet_seed = scraper_cfg.get("quiet_initial_seed", True) and (db.get_total_count() == 0)
+    max_alerts = scraper_cfg.get("max_alerts_per_cycle", 10)
+
+    if quiet_seed:
+        logger.info("First run on fresh database detected: Performing quiet initial seed (indexing existing positions without spamming Discord)...")
 
     for source in sources:
         try:
@@ -90,25 +98,38 @@ def run_scrape_cycle(
 
                     # Check if already seen in DB
                     if not db.is_job_seen(job.id):
-                        logger.info(
-                            f"⚡ NEW ECE JOB FOUND: {job.company} - {job.title} ({', '.join(matched_tags)})"
-                        )
-                        # Save to database
                         db.save_job(job)
                         total_new += 1
 
+                        if quiet_seed:
+                            # In quiet seed mode, save all existing jobs without sending individual embeds
+                            continue
+
+                        if total_new > max_alerts:
+                            logger.warning(
+                                f"Reached max alert limit ({max_alerts}) for this cycle. Additional jobs will be indexed silently."
+                            )
+                            continue
+
+                        logger.info(
+                            f"⚡ NEW ECE JOB FOUND: {job.company} - {job.title} ({', '.join(matched_tags)})"
+                        )
                         # Send Discord Notification
                         success = notifier.send_notification(job)
                         if success:
-                            # Small sleep to prevent aggressive webhook burst
                             time.sleep(1.5)
                         else:
                             logger.error(f"Failed to send Discord alert for job {job.id}")
         except Exception as e:
             logger.error(f"Error processing source {source.name}: {e}", exc_info=True)
 
+    if quiet_seed and not dry_run:
+        logger.info(f"Initial seed complete: {total_matched} existing ECE jobs indexed. Sending summary to Discord...")
+        notifier.send_seed_summary(total_matched, total_found)
+
+    alerts_sent = 0 if quiet_seed else min(total_new, max_alerts)
     logger.info(
-        f"Cycle Summary: Raw Found: {total_found} | ECE Matches: {total_matched} | New Alerts Sent: {total_new} | Total Stored: {db.get_total_count()}"
+        f"Cycle Summary: Raw Found: {total_found} | ECE Matches: {total_matched} | New Alerts Sent: {alerts_sent} | Total Stored: {db.get_total_count()}"
     )
     logger.info("================ Scrape Cycle Completed ================")
 
@@ -142,7 +163,7 @@ def main():
     logger.info(f"Initialized {len(sources)} scraping source(s).")
 
     if args.dry_run or args.once:
-        run_scrape_cycle(sources, ece_filter, db, notifier, dry_run=args.dry_run)
+        run_scrape_cycle(sources, ece_filter, db, notifier, config, dry_run=args.dry_run)
         return
 
     # Continuous Scheduled Loop
@@ -157,7 +178,7 @@ def main():
     signal.signal(signal.SIGTERM, handle_shutdown)
 
     # Run initial cycle immediately
-    run_scrape_cycle(sources, ece_filter, db, notifier)
+    run_scrape_cycle(sources, ece_filter, db, notifier, config)
 
     # Loop with sleep intervals
     while running:
@@ -168,11 +189,10 @@ def main():
             time.sleep(1)
 
         if running:
-            run_scrape_cycle(sources, ece_filter, db, notifier)
+            run_scrape_cycle(sources, ece_filter, db, notifier, config)
 
     logger.info("ECE Scraper daemon stopped gracefully.")
 
 
 if __name__ == "__main__":
     main()
-

@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from datetime import datetime, timezone
 from typing import Dict, Optional
 import requests
 
@@ -54,15 +55,44 @@ class DiscordNotifier:
                     "footer": {
                         "text": "ECE Job Radar • witchs.me"
                     },
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
             ],
         }
         return self._post_webhook(test_payload)
 
+    def send_seed_summary(self, seeded_count: int, total_scraped: int) -> bool:
+        """Sends a single summary message after quietly indexing existing jobs on initial run."""
+        if not self.is_configured():
+            return False
+
+        payload = {
+            "username": self.bot_name,
+            "avatar_url": self.avatar_url,
+            "embeds": [
+                {
+                    "title": "🟢 ECE Job Radar Initialized",
+                    "description": (
+                        f"Indexed **{seeded_count}** existing ECE internship positions (from {total_scraped} total postings).\n\n"
+                        f"Database is seeded! Going forward, **you will only receive alerts for new openings**."
+                    ),
+                    "color": self.embed_color,
+                    "fields": [
+                        {"name": "Seeded ECE Postings", "value": str(seeded_count), "inline": True},
+                        {"name": "Monitoring Mode", "value": "⚡ Instant Alerts for New Jobs", "inline": True},
+                    ],
+                    "footer": {
+                        "text": "ECE Job Radar • Monitoring Active"
+                    },
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            ],
+        }
+        return self._post_webhook(payload)
+
     def _build_embed_payload(self, job: JobPosting) -> Dict:
         tags_str = ", ".join([f"`{kw}`" for kw in job.matched_keywords]) if job.matched_keywords else "N/A"
         
-        # Extract season (e.g. ☀️ Summer 2026, ❄️ Winter 2026, 🍂 Fall 2025)
         season_str = extract_season(
             title=job.title,
             terms=job.terms,
@@ -70,7 +100,6 @@ class DiscordNotifier:
             url=job.url,
         )
 
-        # Format posted date and ISO timestamp
         date_display, iso_timestamp = format_posted_date(job.date_posted)
 
         fields = [

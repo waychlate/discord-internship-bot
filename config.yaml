@@ -5,6 +5,10 @@ scraper:
   interval_minutes: 30
   # Database path (stored in data/ directory for easy Docker volume mounting)
   db_path: "data/jobs.db"
+  # If true, on a fresh database (first run), existing postings are recorded silently without spamming
+  quiet_initial_seed: true
+  # Maximum number of individual Discord alerts to send per cycle (prevents spam during bulk updates)
+  max_alerts_per_cycle: 10
   # Request user agent
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   # Request timeout in seconds
@@ -37,7 +41,7 @@ filter:
     - "arm cortex"
     - "stm32"
     - "esp32"
-
+    
     # Digital Logic & Hardware / Silicon Design
     - "fpga"
     - "asic"
@@ -51,7 +55,7 @@ filter:
     - "soc design"
     - "chip design"
     - "physical design"
-
+    
     # Computer Architecture & Systems
     - "computer architecture"
     - "computer engineering"
