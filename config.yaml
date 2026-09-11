@@ -1,0 +1,144 @@
+# ECE Internship Scraper Configuration
+
+scraper:
+  # Interval in minutes between scraping cycles
+  interval_minutes: 30
+  # Database path (stored in data/ directory for easy Docker volume mounting)
+  db_path: "data/jobs.db"
+  # Request user agent
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  # Request timeout in seconds
+  timeout_seconds: 15
+
+notification:
+  # Webhook username displayed on Discord
+  bot_name: "ECE Job Radar"
+  # Optional custom avatar URL (e.g. hosted on your domain witchs.me or public image)
+  avatar_url: "https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png/discord.png"
+  # Embed color in decimal (e.g., 5793266 for blurple, 3066993 for emerald green, 15844367 for gold)
+  embed_color: 3066993
+  # Set to true to ping @everyone or a specific role on new postings
+  enable_mention: false
+  # Role ID to mention if enable_mention is true (leave empty or set in .env)
+  role_id_to_mention: ""
+
+filter:
+  # At least one inclusion keyword MUST be present in the title (or description) for the job to be selected
+  inclusion_keywords:
+    # Firmware & Embedded Systems
+    - "embedded"
+    - "firmware"
+    - "rtos"
+    - "microcontroller"
+    - "device driver"
+    - "bare metal"
+    - "board support package"
+    - "bsp"
+    - "arm cortex"
+    - "stm32"
+    - "esp32"
+
+    # Digital Logic & Hardware / Silicon Design
+    - "fpga"
+    - "asic"
+    - "rtl"
+    - "verilog"
+    - "systemverilog"
+    - "vhdl"
+    - "digital design"
+    - "vlsi"
+    - "silicon design"
+    - "soc design"
+    - "chip design"
+    - "physical design"
+
+    # Computer Architecture & Systems
+    - "computer architecture"
+    - "computer engineering"
+    - "systems engineering"
+    - "gpu architecture"
+    - "cpu architecture"
+    - "risc-v"
+    - "dsp"
+    - "digital signal processing"
+
+    # Electrical, Hardware & PCB
+    - "hardware engineer"
+    - "hardware engineering"
+    - "electrical engineer"
+    - "electrical engineering"
+    - "ece intern"
+    - "pcb"
+    - "schematic"
+    - "altium"
+    - "analog"
+    - "power electronics"
+    - "rf engineer"
+    - "signal integrity"
+
+    # Test, Validation & Robotics
+    - "silicon validation"
+    - "hardware test"
+    - "post-silicon"
+    - "board bring-up"
+    - "robotics"
+    - "mechatronics"
+    - "controls engineer"
+    - "autonomous systems"
+
+  # Roles must match one of these internship / student keywords
+  role_types:
+    - "intern"
+    - "internship"
+    - "co-op"
+    - "coop"
+    - "student"
+    - "apprentice"
+
+  # If any exclusion keyword is found, the job is ignored even if it matches an inclusion keyword
+  exclusion_keywords:
+    - "senior"
+    - "principal"
+    - "lead"
+    - "staff"
+    - "director"
+    - "manager"
+    - "frontend"
+    - "front-end"
+    - "front end"
+    - "marketing"
+    - "sales"
+    - "recruiter"
+    - "human resources"
+    - "accounting"
+    - "graphic design"
+    - "social media"
+
+sources:
+  # Curated Internship Repositories
+  github_repositories:
+    - name: "SimplifyJobs Tech Internships"
+      url: "https://raw.githubusercontent.com/SimplifyJobs/Summer2025-Internships/dev/README.md"
+      type: "markdown_table"
+    - name: "SimplifyJobs New Grad Positions"
+      url: "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md"
+      type: "markdown_table"
+
+  # Direct Greenhouse Public ATS Boards (ECE/Hardware/Semiconductor focused)
+  greenhouse_boards:
+    - "spacex"
+    - "neuralink"
+    - "andurilindustries"
+    - "skydio"
+    - "samba-nova"
+    - "cerebras"
+    - "astralab"
+    - "tenstorrent"
+    - "verkada"
+    - "verkada-hardware"
+    - "jobyaviation"
+
+  # Direct Lever Public ATS Boards
+  lever_boards:
+    - "palantir"
+    - "rethinkrobotics"

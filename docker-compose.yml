@@ -1,0 +1,19 @@
+services:
+  ece-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ece_job_radar
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist SQLite database across container restarts & updates
+      - ./data:/app/data
+      # Mount configuration so you can tweak keywords/sources without rebuilding
+      - ./config.yaml:/app/config.yaml
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
