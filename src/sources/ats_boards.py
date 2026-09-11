@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from typing import Dict, List
 import requests
 
@@ -91,6 +92,14 @@ class ATSBoardSource(BaseSource):
             categories = j.get("categories", {})
             location = categories.get("location", "Not specified")
             commitment = categories.get("commitment", "")
+            
+            created_at_val = j.get("createdAt")
+            date_posted = None
+            if created_at_val:
+                try:
+                    date_posted = datetime.fromtimestamp(created_at_val / 1000.0, timezone.utc).isoformat()
+                except Exception:
+                    pass
 
             if title and job_url:
                 results.append(
@@ -101,7 +110,7 @@ class ATSBoardSource(BaseSource):
                         location=location,
                         source=f"Lever ({company_name})",
                         terms=commitment or None,
+                        date_posted=date_posted,
                     )
                 )
         return results
-

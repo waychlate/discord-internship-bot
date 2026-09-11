@@ -4,6 +4,7 @@ import time
 from typing import Dict, Optional
 import requests
 
+from src.formatters import extract_season, format_posted_date
 from src.models import JobPosting
 
 logger = logging.getLogger(__name__)
@@ -61,22 +62,32 @@ class DiscordNotifier:
     def _build_embed_payload(self, job: JobPosting) -> Dict:
         tags_str = ", ".join([f"`{kw}`" for kw in job.matched_keywords]) if job.matched_keywords else "N/A"
         
+        # Extract season (e.g. ☀️ Summer 2026, ❄️ Winter 2026, 🍂 Fall 2025)
+        season_str = extract_season(
+            title=job.title,
+            terms=job.terms,
+            source_name=job.source,
+            url=job.url,
+        )
+
+        # Format posted date and ISO timestamp
+        date_display, iso_timestamp = format_posted_date(job.date_posted)
+
         fields = [
             {"name": "🏢 Company", "value": job.company, "inline": True},
             {"name": "📍 Location", "value": job.location or "Not specified", "inline": True},
+            {"name": "📅 Season / Term", "value": season_str, "inline": True},
+            {"name": "🕒 Posted", "value": date_display, "inline": True},
+            {"name": "🏷️ Matched ECE Tags", "value": tags_str, "inline": False},
+            {"name": "📡 Source", "value": job.source, "inline": True},
         ]
-
-        if job.terms:
-            fields.append({"name": "📅 Term", "value": job.terms, "inline": True})
-
-        fields.append({"name": "🏷️ Matched ECE Tags", "value": tags_str, "inline": False})
-        fields.append({"name": "📡 Source", "value": job.source, "inline": True})
 
         embed = {
             "title": f"🎯 {job.title}",
             "url": job.url,
             "color": self.embed_color,
             "fields": fields,
+            "timestamp": iso_timestamp,
             "footer": {
                 "text": f"ECE Job Radar • ID: {job.id}"
             },
@@ -112,4 +123,3 @@ class DiscordNotifier:
                 time.sleep(1)
 
         return False
-
