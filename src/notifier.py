@@ -2,7 +2,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 import requests
 
 from src.formatters import extract_season, format_posted_date
@@ -21,6 +21,9 @@ class DiscordNotifier:
         self.avatar_url = notif_cfg.get("avatar_url", "")
         self.embed_color = notif_cfg.get("embed_color", 3066993)  # Emerald green default
         self.enable_mention = notif_cfg.get("enable_mention", False)
+        self.software_keywords = {
+            k.lower().strip() for k in config.get("filter", {}).get("software_keywords", [])
+        }
         self.role_id = os.getenv("DISCORD_ROLE_ID") or notif_cfg.get("role_id_to_mention", "")
 
     def is_configured(self) -> bool:
@@ -32,6 +35,16 @@ class DiscordNotifier:
             return False
 
         payload = self._build_embed_payload(job)
+        return self._post_webhook(payload)
+
+    def send_batch(self, jobs: List[JobPosting]) -> bool:
+        """One webhook message with up to 10 embeds (Discord's limit): a single notification for many jobs."""
+        if not self.is_configured():
+            logger.warning("Discord webhook URL is not configured. Skipping notification.")
+            return False
+        payloads = [self._build_embed_payload(j) for j in jobs]
+        payload = dict(payloads[0])
+        payload["embeds"] = [p["embeds"][0] for p in payloads]
         return self._post_webhook(payload)
 
     def send_test_message(self) -> bool:
@@ -93,6 +106,10 @@ class DiscordNotifier:
     def _build_embed_payload(self, job: JobPosting) -> Dict:
         tags_str = ", ".join([f"`{kw}`" for kw in job.matched_keywords]) if job.matched_keywords else "N/A"
         
+        tags = job.matched_keywords
+        is_swe = bool(tags) and all(t in self.software_keywords for t in tags)
+        track = "💻 SWE" if is_swe else "⚡ EE/CPE"
+
         season_str = extract_season(
             title=job.title,
             terms=job.terms,
@@ -107,7 +124,8 @@ class DiscordNotifier:
             {"name": "📍 Location", "value": job.location or "Not specified", "inline": True},
             {"name": "📅 Season / Term", "value": season_str, "inline": True},
             {"name": "🕒 Posted", "value": date_display, "inline": True},
-            {"name": "🏷️ Matched ECE Tags", "value": tags_str, "inline": False},
+            {"name": "🧭 Track", "value": track, "inline": True},
+            {"name": "🏷️ Matched Tags", "value": tags_str, "inline": False},
             {"name": "📡 Source", "value": job.source, "inline": True},
         ]
 

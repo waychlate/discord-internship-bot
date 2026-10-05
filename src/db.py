@@ -40,6 +40,14 @@ class Database:
                 )
                 """
             )
+            # Migrations for DBs created before the pending queue existed
+            cols = {r["name"] for r in cursor.execute("PRAGMA table_info(seen_jobs)")}
+            if "status" not in cols:  # 'pending' = queued for Discord, 'sent', or 'seen' (indexed silently)
+                cursor.execute("ALTER TABLE seen_jobs ADD COLUMN status TEXT DEFAULT 'sent'")
+            if "dedup_key" not in cols:
+                cursor.execute("ALTER TABLE seen_jobs ADD COLUMN dedup_key TEXT")
+            if "date_posted" not in cols:
+                cursor.execute("ALTER TABLE seen_jobs ADD COLUMN date_posted TEXT")
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_seen_jobs_company ON seen_jobs(company);"
             )
@@ -51,7 +59,14 @@ class Database:
             cursor.execute("SELECT 1 FROM seen_jobs WHERE id = ?", (job_id,))
             return cursor.fetchone() is not None
 
-    def save_job(self, job: JobPosting) -> bool:
+    def is_duplicate(self, job: JobPosting) -> bool:
+        """Seen before, by exact id or by the job id inside its URL (same posting on another list)."""
+        with self.get_connection() as conn:
+            return conn.execute(
+                "SELECT 1 FROM seen_jobs WHERE id = ? OR dedup_key = ?", (job.id, job.dedup_key)
+            ).fetchone() is not None
+
+    def save_job(self, job: JobPosting, status: str = "sent") -> bool:
         """Save a new job. Returns True if inserted, False if already exists."""
         if self.is_job_seen(job.id):
             return False
@@ -61,8 +76,8 @@ class Database:
             cursor.execute(
                 """
                 INSERT OR IGNORE INTO seen_jobs 
-                (id, company, title, url, location, source, matched_keywords, terms, sponsorship, first_seen_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, company, title, url, location, source, matched_keywords, terms, sponsorship, first_seen_at, status, date_posted, dedup_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job.id,
@@ -75,6 +90,9 @@ class Database:
                     job.terms or "",
                     job.sponsorship or "",
                     datetime.now(timezone.utc).isoformat(),
+                    status,
+                    job.date_posted,
+                    job.dedup_key,
                 ),
             )
             conn.commit()
@@ -86,3 +104,32 @@ class Database:
             cursor.execute("SELECT COUNT(*) FROM seen_jobs")
             return cursor.fetchone()[0]
 
+
+    def pending_count(self) -> int:
+        with self.get_connection() as conn:
+            return conn.execute("SELECT COUNT(*) FROM seen_jobs WHERE status = 'pending'").fetchone()[0]
+
+    def pending_batch(self, limit: int) -> List[JobPosting]:
+        """Oldest queued jobs, up to `limit`."""
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM seen_jobs WHERE status = 'pending' ORDER BY first_seen_at, rowid LIMIT ?", (limit,)
+            ).fetchall()
+        return [
+            JobPosting(
+                company=r["company"],
+                title=r["title"],
+                url=r["url"],
+                location=r["location"] or "Not specified",
+                source=r["source"] or "Unknown",
+                date_posted=r["date_posted"] or None,
+                matched_keywords=[k for k in (r["matched_keywords"] or "").split(", ") if k],
+                terms=r["terms"] or None,
+            )
+            for r in rows
+        ]
+
+    def mark_sent(self, job_id: str, status: str = "sent"):
+        with self.get_connection() as conn:
+            conn.execute("UPDATE seen_jobs SET status = ? WHERE id = ?", (status, job_id))
+            conn.commit()

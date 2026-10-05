@@ -8,6 +8,7 @@ from typing import Dict, List
 import yaml
 from dotenv import load_dotenv
 
+from src.dates import age_days, is_fresh
 from src.db import Database
 from src.filter import ECEFilter
 from src.models import JobPosting
@@ -15,6 +16,8 @@ from src.notifier import DiscordNotifier
 from src.sources.ats_boards import ATSBoardSource
 from src.sources.base import BaseSource
 from src.sources.github_markdown import GitHubMarkdownSource
+from src.sources.keyword_search import AdzunaSource, USAJobsSource
+from src.sources.page_watch import PageWatchSource
 
 # Configure logging
 logging.basicConfig(
@@ -46,18 +49,58 @@ def init_sources(config: Dict) -> List[BaseSource]:
     sources_cfg = config.get("sources", {})
 
     # GitHub Repos
-    github_repos = sources_cfg.get("github_repositories", [])
-    for repo in github_repos:
-        name = repo.get("name", "GitHub Repo")
-        url = repo.get("url")
-        if url:
-            sources.append(GitHubMarkdownSource(name, url, config))
+    for repo in sources_cfg.get("github_repositories", []):
+        if repo.get("url"):
+            sources.append(
+                GitHubMarkdownSource(
+                    repo.get("name", "GitHub Repo"), repo["url"], config, repo.get("internships_only", False)
+                )
+            )
 
-    # ATS Boards (Greenhouse / Lever)
-    if sources_cfg.get("greenhouse_boards") or sources_cfg.get("lever_boards"):
+    # Company ATS boards (Greenhouse / Lever / Ashby / SmartRecruiters / Workday)
+    if sources_cfg.get("companies"):
         sources.append(ATSBoardSource("Company ATS Boards", config))
 
+    # Keyword-search APIs (only active when their keys are in .env)
+    for search in (AdzunaSource(config), USAJobsSource(config)):
+        if search.enabled():
+            sources.append(search)
+        else:
+            logger.info(f"{search.name} disabled (missing API keys in .env or no keyword_search.queries)")
+
+    for watch in config.get("page_watchers", []):
+        sources.append(PageWatchSource(watch, config))
+
     return sources
+
+
+def drip_gap(pending: int, config: Dict) -> float:
+    """Seconds to wait before the next message so the queue drains within drip_window_minutes.
+    Small queues wait at most drip_max_gap_seconds; big ones are stretched to fit the window."""
+    cfg = config.get("scraper", {})
+    batch = cfg.get("alert_batch_size", 10)
+    window = cfg.get("drip_window_minutes", 60) * 60
+    messages = -(-max(pending, 1) // batch)  # ceil
+    return min(cfg.get("drip_max_gap_seconds", 120), window / messages)
+
+
+def send_next_batch(db: Database, notifier: DiscordNotifier, config: Dict) -> bool:
+    """Send the oldest queued alerts as one message. Returns False when nothing was sent (empty or failed)."""
+    jobs = db.pending_batch(config.get("scraper", {}).get("alert_batch_size", 10))
+    if not jobs:
+        return False
+    logger.info(f"⚡ SENDING {len(jobs)} JOB ALERT(S): " + "; ".join(f"{j.company} - {j.title}" for j in jobs))
+    if notifier.send_batch(jobs):
+        sent = jobs
+    else:
+        # e.g. Discord rejects >6000 chars of embed text per message: retry one by one so the queue can't jam
+        sent = [j for j in jobs if notifier.send_notification(j)] if len(jobs) > 1 else []
+    if not sent:
+        logger.error("Failed to send Discord alert batch; will retry")
+        return False
+    for j in sent:
+        db.mark_sent(j.id)
+    return True
 
 
 def run_scrape_cycle(
@@ -75,7 +118,7 @@ def run_scrape_cycle(
 
     scraper_cfg = config.get("scraper", {})
     quiet_seed = scraper_cfg.get("quiet_initial_seed", True) and (db.get_total_count() == 0)
-    max_alerts = scraper_cfg.get("max_alerts_per_cycle", 10)
+    max_age_days = scraper_cfg.get("max_age_days", 2)
 
     if quiet_seed:
         logger.info("First run on fresh database detected: Performing quiet initial seed (indexing existing positions without spamming Discord)...")
@@ -86,40 +129,27 @@ def run_scrape_cycle(
             total_found += len(raw_jobs)
 
             for job in raw_jobs:
-                is_match, matched_tags = ece_filter.evaluate(job)
-                if is_match:
-                    total_matched += 1
-                    
-                    if dry_run:
-                        logger.info(
-                            f"[DRY-RUN MATCH] {job.company} - {job.title} | Tags: {matched_tags} | URL: {job.url}"
-                        )
+                if not job.pre_approved:
+                    if not is_fresh(job.date_posted, max_age_days):
                         continue
+                    is_match, matched_tags = ece_filter.evaluate(job)
+                    if not is_match:
+                        continue
+                else:
+                    matched_tags = job.matched_keywords
+                total_matched += 1
 
-                    # Check if already seen in DB
-                    if not db.is_job_seen(job.id):
-                        db.save_job(job)
-                        total_new += 1
+                if dry_run:
+                    logger.info(
+                        f"[DRY-RUN MATCH] {job.company} - {job.title} | Age: {age_days(job.date_posted)} days | Tags: {matched_tags} | URL: {job.url}"
+                    )
+                    continue
 
-                        if quiet_seed:
-                            # In quiet seed mode, save all existing jobs without sending individual embeds
-                            continue
-
-                        if total_new > max_alerts:
-                            logger.warning(
-                                f"Reached max alert limit ({max_alerts}) for this cycle. Additional jobs will be indexed silently."
-                            )
-                            continue
-
-                        logger.info(
-                            f"⚡ NEW ECE JOB FOUND: {job.company} - {job.title} ({', '.join(matched_tags)})"
-                        )
-                        # Send Discord Notification
-                        success = notifier.send_notification(job)
-                        if success:
-                            time.sleep(1.5)
-                        else:
-                            logger.error(f"Failed to send Discord alert for job {job.id}")
+                if db.is_duplicate(job):
+                    continue
+                # Quiet seed indexes without alerting; otherwise queue it for the drip sender
+                db.save_job(job, status="seen" if quiet_seed else "pending")
+                total_new += 1
         except Exception as e:
             logger.error(f"Error processing source {source.name}: {e}", exc_info=True)
 
@@ -127,9 +157,9 @@ def run_scrape_cycle(
         logger.info(f"Initial seed complete: {total_matched} existing ECE jobs indexed. Sending summary to Discord...")
         notifier.send_seed_summary(total_matched, total_found)
 
-    alerts_sent = 0 if quiet_seed else min(total_new, max_alerts)
     logger.info(
-        f"Cycle Summary: Raw Found: {total_found} | ECE Matches: {total_matched} | New Alerts Sent: {alerts_sent} | Total Stored: {db.get_total_count()}"
+        f"Cycle Summary: Raw Found: {total_found} | Fresh Matches: {total_matched} | New: {total_new} | "
+        f"Queued: {db.pending_count()} | Total Stored: {db.get_total_count()}"
     )
     logger.info("================ Scrape Cycle Completed ================")
 
@@ -164,6 +194,8 @@ def main():
 
     if args.dry_run or args.once:
         run_scrape_cycle(sources, ece_filter, db, notifier, config, dry_run=args.dry_run)
+        while args.once and not args.dry_run and send_next_batch(db, notifier, config):
+            time.sleep(1.5)  # --once flushes the whole queue immediately instead of dripping
         return
 
     # Continuous Scheduled Loop
@@ -177,19 +209,21 @@ def main():
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
-    # Run initial cycle immediately
-    run_scrape_cycle(sources, ece_filter, db, notifier, config)
-
-    # Loop with sleep intervals
+    # Scraping and alert sending run on separate timers: cycles enqueue, the drip sender
+    # paces Discord alerts (see drip_gap).
+    next_cycle = next_send = 0.0
     while running:
-        logger.info(f"Sleeping for {interval_minutes} minutes until next cycle...")
-        for _ in range(interval_minutes * 60):
-            if not running:
-                break
-            time.sleep(1)
-
-        if running:
+        now = time.monotonic()
+        if now >= next_cycle:
             run_scrape_cycle(sources, ece_filter, db, notifier, config)
+            next_cycle = time.monotonic() + interval_minutes * 60
+            logger.info(f"Next scrape cycle in {interval_minutes} minutes.")
+        if now >= next_send:
+            if send_next_batch(db, notifier, config):
+                next_send = time.monotonic() + drip_gap(db.pending_count(), config)
+            elif db.pending_count():
+                next_send = time.monotonic() + 60  # send failed; retry in a minute
+        time.sleep(1)
 
     logger.info("ECE Scraper daemon stopped gracefully.")
 

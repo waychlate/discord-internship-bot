@@ -11,9 +11,11 @@ logger = logging.getLogger(__name__)
 
 
 class GitHubMarkdownSource(BaseSource):
-    def __init__(self, name: str, repo_url: str, config: Dict):
+    def __init__(self, name: str, repo_url: str, config: Dict, internships_only: bool = False):
         super().__init__(name, config)
         self.repo_url = repo_url
+        # Lists that only contain internships: label rows so the 'intern' role check passes
+        self.internships_only = internships_only
         self.timeout = config.get("scraper", {}).get("timeout_seconds", 15)
         self.user_agent = config.get("scraper", {}).get(
             "user_agent",
@@ -21,6 +23,13 @@ class GitHubMarkdownSource(BaseSource):
         )
 
     def fetch_jobs(self) -> List[JobPosting]:
+        jobs = self._fetch_jobs()
+        if self.internships_only:
+            for j in jobs:
+                j.terms = j.terms or "Internship"
+        return jobs
+
+    def _fetch_jobs(self) -> List[JobPosting]:
         headers = {"User-Agent": self.user_agent}
         try:
             logger.info(f"Fetching GitHub content from {self.name} ({self.repo_url})...")
@@ -164,15 +173,20 @@ class GitHubMarkdownSource(BaseSource):
                         header_map["title"] = idx
                     elif "location" in h:
                         header_map["location"] = idx
-                    elif "application" in h or "link" in h or "apply" in h:
+                    elif "application" in h or "link" in h or "apply" in h or "posting" in h:
                         header_map["link"] = idx
-                    elif "date" in h or "age" in h:
+                    elif "date" in h or "age" in h or "added" in h:
                         header_map["date"] = idx
                     elif "terms" in h or "season" in h:
                         header_map["terms"] = idx
                 continue
 
             if in_table and "company" in header_map and "title" in header_map:
+                # A literal "|" inside a title adds columns; fold them back into the title cell
+                extra = len(columns) - len(headers)
+                if extra > 0:
+                    ti = header_map["title"]
+                    columns = columns[:ti] + [" | ".join(columns[ti : ti + extra + 1])] + columns[ti + extra + 1 :]
                 try:
                     company_raw = columns[header_map["company"]] if header_map["company"] < len(columns) else ""
                     title_raw = columns[header_map["title"]] if header_map["title"] < len(columns) else ""
@@ -194,7 +208,10 @@ class GitHubMarkdownSource(BaseSource):
 
                     job_url = direct_link or title_link
                     if not job_url:
-                        urls = re.findall(r'https?://[^\s<>"\)\]]+', line_str)
+                        urls = [
+                            u for u in re.findall(r'https?://[^\s<>"\)\]]+', line_str)
+                            if "shields.io" not in u and "imgur.com" not in u
+                        ]
                         if urls:
                             job_url = urls[0]
 
@@ -230,8 +247,13 @@ class GitHubMarkdownSource(BaseSource):
         else:
             text = raw_str
 
-        md_match = re.search(r"\[([^\]]+)\]\((https?://[^\)]+)\)", raw_str)
-        if md_match:
+        # [![Apply](badge.svg)](real-url): the link is the outer one
+        badge_match = re.search(r"\[!\[[^\]]*\]\([^)]*\)\]\((https?://[^)]+)\)", raw_str)
+        md_match = re.search(r"(?<!!)\[([^\]]+)\]\((https?://[^\)]+)\)", raw_str)
+        if badge_match:
+            link = badge_match.group(1).strip()
+            text = ""
+        elif md_match:
             text = md_match.group(1).strip()
             link = md_match.group(2).strip()
 

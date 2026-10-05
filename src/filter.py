@@ -6,8 +6,15 @@ from src.models import JobPosting
 class ECEFilter:
     def __init__(self, config: Dict):
         filter_cfg = config.get("filter", {})
+        self.software_keywords = [
+            k.lower().strip() for k in filter_cfg.get("software_keywords", [])
+        ]
         self.inclusion_keywords = [
             k.lower().strip() for k in filter_cfg.get("inclusion_keywords", [])
+        ] + self.software_keywords
+        # "company title" regexes that skip the keyword/role checks (e.g. NVIDIA Ignite)
+        self._always_include = [
+            re.compile(r, re.IGNORECASE) for r in filter_cfg.get("always_include_regex", [])
         ]
         self.role_types = [
             r.lower().strip() for r in filter_cfg.get("role_types", ["intern", "co-op", "coop"])
@@ -36,6 +43,11 @@ class ECEFilter:
         Returns (is_match, list_of_matched_keywords).
         """
         search_text = f"{posting.title} {posting.company} {posting.location or ''} {posting.terms or ''}"
+
+        company_title = f"{posting.company} {posting.title}"
+        if any(p.search(company_title) for p in self._always_include):
+            posting.matched_keywords = posting.matched_keywords or ["priority program"]
+            return True, posting.matched_keywords
 
         # 1. Check Exclusion Keywords first
         for i, pattern in enumerate(self._exclusion_patterns):

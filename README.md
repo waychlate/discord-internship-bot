@@ -16,8 +16,13 @@ When a new matching position is discovered, it dispatches an instant, rich embed
   - **Validation & Robotics**: Silicon Validation, Post-Silicon, Board Bring-up, Mechatronics, Controls
 - **🔄 Deduplication via SQLite**: Tracks seen jobs to guarantee you never receive duplicate notifications.
 - **🚀 Multi-Source Aggregation**:
-  - Curated GitHub internship tracking tables (SimplifyJobs, Opps, Tech Internships).
-  - Direct public ATS API boards (SpaceX, Neuralink, Anduril, Skydio, SambaNova, Cerebras, Tenstorrent, Verkada, Joby, Palantir).
+  - Curated GitHub internship lists (SimplifyJobs, IEEE at Cornell ECE, SpeedyApply, and more).
+  - Direct public ATS boards for ~65 companies (Greenhouse, Lever, Ashby, SmartRecruiters, Workday), listed under `sources.companies` in `config.yaml`.
+  - Keyword search via Adzuna and USAJobs (optional, free API keys in `.env`).
+  - A page watcher that pings when the NVIDIA Ignite page changes.
+- **🕑 Fresh only**: postings older than `scraper.max_age_days` (default 2) are ignored.
+- **💧 Drip alerts**: new matches are queued and sent one by one (never dropped); a large backlog is spread over `drip_window_minutes`.
+- **💻 EE/CPE + SWE**: embeds are tagged `EE/CPE` or `SWE`.
 - **🐳 Docker & Home Server Ready**: Packaged for 24/7 low-resource background operation (`restart: unless-stopped`).
 - **🛡️ Outbound Only**: Requires no open router ports or static public IPs.
 
@@ -113,17 +118,6 @@ You can modify `config.yaml` at any time without recompiling the Docker containe
 - **`filter.exclusion_keywords`**: Filter out seniority levels or unrelated roles (e.g. `frontend`, `marketing`, `senior`).
 - **`sources.github_repositories`**: Add new markdown repositories.
 - **`sources.greenhouse_boards` / `lever_boards`**: Add new company ATS tokens.
-
----
-
-## 🌐 Note on Custom Domains (`witchs.me`)
-
-Because the scraper pushes notifications outbound to Discord's servers via HTTPS, **no inbound open ports or domain setup are required** for basic operation.
-
-However, if you'd like to use your domain `witchs.me`:
-
-1. **Custom Branding**: You can host an avatar icon on your domain (e.g. `https://witchs.me/assets/radar-icon.png`) and point `notification.avatar_url` in `config.yaml` to it.
-2. **Future Web UI**: If you ever want a web dashboard to browse past jobs stored in SQLite, you can point a subdomain (e.g., `jobs.witchs.me`) to a lightweight web viewer running on your home server behind a reverse proxy (e.g., Caddy, Nginx, or Cloudflare Tunnel).
 
 ---
 

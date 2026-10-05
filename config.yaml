@@ -7,12 +7,18 @@ scraper:
   db_path: "data/jobs.db"
   # If true, on a fresh database (first run), existing postings are recorded silently without spamming
   quiet_initial_seed: true
-  # Maximum number of individual Discord alerts to send per cycle (prevents spam during bulk updates)
-  max_alerts_per_cycle: 10
+  # Only alert on postings at most this many days old (undated postings alert the first time they're seen)
+  max_age_days: 2
+  # Alerts are queued and sent in batches (one Discord message with up to alert_batch_size embeds = one
+  # notification). Gaps between messages are at most drip_max_gap_seconds, stretched so a big backlog
+  # drains within drip_window_minutes. Nothing is dropped. Discord allows at most 10 embeds per message.
+  alert_batch_size: 10
+  drip_window_minutes: 60
+  drip_max_gap_seconds: 120
   # Request user agent
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   # Request timeout in seconds
-  timeout_seconds: 15
+  timeout_seconds: 30
 
 notification:
   # Webhook username displayed on Discord
@@ -41,7 +47,7 @@ filter:
     - "arm cortex"
     - "stm32"
     - "esp32"
-    
+
     # Digital Logic & Hardware / Silicon Design
     - "fpga"
     - "asic"
@@ -55,7 +61,7 @@ filter:
     - "soc design"
     - "chip design"
     - "physical design"
-    
+
     # Computer Architecture & Systems
     - "computer architecture"
     - "computer engineering"
@@ -90,6 +96,30 @@ filter:
     - "controls engineer"
     - "autonomous systems"
 
+  # Software roles (CPE students). Matched like inclusion keywords; embeds tagged SWE if only these match.
+  software_keywords:
+    - "software engineer"
+    - "software engineering"
+    - "software developer"
+    - "software development"
+    - "software intern"
+    - "backend"
+    - "back-end"
+    - "full stack"
+    - "full-stack"
+    - "systems software"
+    - "embedded software"
+    - "devops"
+    - "site reliability"
+    - "compiler"
+    - "operating system"
+    - "kernel"
+    - "networking"
+
+  # "company title" regexes that always alert (skip keyword/role checks). NVIDIA Ignite is a freshman/sophomore program.
+  always_include_regex:
+    - "nvidia.*ignite"
+
   # Roles must match one of these internship / student keywords
   role_types:
     - "intern"
@@ -119,30 +149,121 @@ filter:
     - "social media"
 
 sources:
-  # Curated Internship Repositories
+  # Curated Internship Repositories (internships_only: every row is an internship)
   github_repositories:
-    - name: "SimplifyJobs Tech Internships"
-      url: "https://raw.githubusercontent.com/SimplifyJobs/Summer2025-Internships/dev/README.md"
+    - name: "SimplifyJobs Summer 2027 Internships"
+      url: "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md"
       type: "markdown_table"
+      internships_only: true
     - name: "SimplifyJobs New Grad Positions"
       url: "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md"
       type: "markdown_table"
+    - name: "IEEE at Cornell ECE Internships"
+      url: "https://raw.githubusercontent.com/IEEEAtCornell/2026-ECE-Internships/main/README.md"
+      type: "markdown_table"
+      internships_only: true
+    - name: "SpeedyApply 2027 SWE Internships"
+      url: "https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main/README.md"
+      type: "markdown_table"
+      internships_only: true
+    - name: "Vansh Summer 2027 Internships"
+      url: "https://raw.githubusercontent.com/vanshb03/Summer2027-Internships/dev/README.md"
+      type: "markdown_table"
+      internships_only: true
+    - name: "sndsh404 Summer 2027 Internships"
+      url: "https://raw.githubusercontent.com/sndsh404/summer-2027-internships/main/README.md"
+      type: "markdown_table"
+      internships_only: true
 
-  # Direct Greenhouse Public ATS Boards (ECE/Hardware/Semiconductor focused)
-  greenhouse_boards:
-    - "spacex"
-    - "neuralink"
-    - "andurilindustries"
-    - "skydio"
-    - "samba-nova"
-    - "cerebras"
-    - "astralab"
-    - "tenstorrent"
-    - "verkada"
-    - "verkada-hardware"
-    - "jobyaviation"
+  # Public ATS boards. Add a company: {name, ats, slug}. Workday: slug is tenant/site, plus host.
+  companies:
+    # greenhouse
+    - {name: "AMCA", ats: greenhouse, slug: "amca"}
+    - {name: "Anduril", ats: greenhouse, slug: "andurilindustries"}
+    - {name: "Astranis", ats: greenhouse, slug: "astranis"}
+    - {name: "Efficient Computer", ats: greenhouse, slug: "efficientcomputer"}
+    - {name: "Freeform", ats: greenhouse, slug: "freeformfuturecorp"}
+    - {name: "General Matter", ats: greenhouse, slug: "generalmatter"}
+    - {name: "HP IQ", ats: greenhouse, slug: "hpiq"}
+    - {name: "K2 Space", ats: greenhouse, slug: "k2spacecorporation"}
+    - {name: "Mill", ats: greenhouse, slug: "mill"}
+    - {name: "Muon Space", ats: greenhouse, slug: "muonspace"}
+    - {name: "Rocket Lab USA", ats: greenhouse, slug: "rocketlab"}
+    - {name: "Verkada", ats: greenhouse, slug: "verkada"}
+    - {name: "SpaceX", ats: greenhouse, slug: "spacex"}
+    - {name: "Neuralink", ats: greenhouse, slug: "neuralink"}
+    - {name: "Tenstorrent", ats: greenhouse, slug: "tenstorrent"}
+    # lever
+    - {name: "CesiumAstro", ats: lever, slug: "CesiumAstro"}
+    - {name: "Palantir", ats: lever, slug: "palantir"}
+    # ashby
+    - {name: "Allen Control Systems", ats: ashby, slug: "allen-control-systems"}
+    - {name: "Antares Nuclear", ats: ashby, slug: "Antares"}
+    - {name: "Apex", ats: ashby, slug: "apex-technology-inc"}
+    - {name: "Bedrock Robotics", ats: ashby, slug: "bedrock-robotics"}
+    - {name: "Gecko Robotics", ats: ashby, slug: "gecko-robotics"}
+    - {name: "Northwood Space", ats: ashby, slug: "NorthwoodSpace"}
+    - {name: "Revel", ats: ashby, slug: "revel"}
+    - {name: "Saronic", ats: ashby, slug: "saronic"}
+    # smartrecruiters
+    - {name: "Solidigm", ats: smartrecruiters, slug: "Solidigm"}
+    - {name: "TTP", ats: smartrecruiters, slug: "TTP1"}
+    # workday
+    - {name: "Draper", ats: workday, slug: "draper/Draper_Careers", host: "https://draper.wd5.myworkdayjobs.com"}
+    - {name: "Ensign-Bickford Aerospace & Defense Company", ats: workday, slug: "ebi/ebadcareers", host: "https://ebi.wd5.myworkdayjobs.com"}
+    - {name: "Ensign-Bickford Industries", ats: workday, slug: "ebi/ebicareers", host: "https://ebi.wd5.myworkdayjobs.com"}
+    - {name: "Marvell", ats: workday, slug: "marvell/MarvellCareers", host: "https://marvell.wd1.myworkdayjobs.com"}
+    - {name: "Motorola", ats: workday, slug: "motorolasolutions/Careers", host: "https://motorolasolutions.wd5.myworkdayjobs.com"}
+    - {name: "Northrop Grumman", ats: workday, slug: "ngc/Northrop_Grumman_External_Site", host: "https://ngc.wd1.myworkdayjobs.com"}
+    - {name: "Stryker", ats: workday, slug: "stryker/strykercareers", host: "https://stryker.wd1.myworkdayjobs.com"}
+    - {name: "AeroVironment", ats: workday, slug: "avav/avav", host: "https://avav.wd1.myworkdayjobs.com"}
+    - {name: "Applied Materials", ats: workday, slug: "amat/External", host: "https://amat.wd1.myworkdayjobs.com"}
+    - {name: "Blue Origin", ats: workday, slug: "blueorigin/blueorigin", host: "https://blueorigin.wd5.myworkdayjobs.com"}
+    - {name: "Booz Allen", ats: workday, slug: "bah/bah_jobs", host: "https://bah.wd1.myworkdayjobs.com"}
+    - {name: "Ciena", ats: workday, slug: "ciena/Careers", host: "https://ciena.wd5.myworkdayjobs.com"}
+    - {name: "GE Aerospace", ats: workday, slug: "geaerospace/ge_externalsite", host: "https://geaerospace.wd5.myworkdayjobs.com"}
+    - {name: "GE Healthcare", ats: workday, slug: "gehc/GEHC_ExternalSite", host: "https://gehc.wd5.myworkdayjobs.com"}
+    - {name: "GE Vernova", ats: workday, slug: "gevernova/only_confidential_executive_recruiting", host: "https://gevernova.wd5.myworkdayjobs.com"}
+    - {name: "General Motors", ats: workday, slug: "generalmotors/Careers_GM", host: "https://generalmotors.wd5.myworkdayjobs.com"}
+    - {name: "GlobalFoundries", ats: workday, slug: "globalfoundries/External", host: "https://globalfoundries.wd1.myworkdayjobs.com"}
+    - {name: "Hitachi", ats: workday, slug: "hitachi/hitachi", host: "https://hitachi.wd1.myworkdayjobs.com"}
+    - {name: "iRhythm Technologies", ats: workday, slug: "irhythmtech/irhythm", host: "https://irhythmtech.wd5.myworkdayjobs.com"}
+    - {name: "Jabil", ats: workday, slug: "jabil/Jabil_Careers", host: "https://jabil.wd5.myworkdayjobs.com"}
+    - {name: "Johnson & Johnson", ats: workday, slug: "jj/JJ", host: "https://jj.wd5.myworkdayjobs.com"}
+    - {name: "Leidos", ats: workday, slug: "leidos/External", host: "https://leidos.wd5.myworkdayjobs.com"}
+    - {name: "Moog", ats: workday, slug: "moog/moog_external_career_site", host: "https://moog.wd5.myworkdayjobs.com"}
+    - {name: "Neogen", ats: workday, slug: "neogen/neogencareers", host: "https://neogen.wd5.myworkdayjobs.com"}
+    - {name: "NXP Semiconductors", ats: workday, slug: "nxp/careers", host: "https://nxp.wd3.myworkdayjobs.com"}
+    - {name: "Oshkosh", ats: workday, slug: "oshkoshcorporation/Oshkosh", host: "https://oshkoshcorporation.wd5.myworkdayjobs.com"}
+    - {name: "Philips", ats: workday, slug: "philips/jobs-and-careers", host: "https://philips.wd3.myworkdayjobs.com"}
+    - {name: "Saab", ats: workday, slug: "saabusa/saab_careers", host: "https://saabusa.wd1.myworkdayjobs.com"}
+    - {name: "Semtech", ats: workday, slug: "semtech/SemtechCareers", host: "https://semtech.wd1.myworkdayjobs.com"}
+    - {name: "Sierra Nevada Corporation", ats: workday, slug: "snc/snc_external_career_site", host: "https://snc.wd1.myworkdayjobs.com"}
+    - {name: "Stanley Black & Decker", ats: workday, slug: "sbdinc/Stanley_Black_Decker_Career_Site", host: "https://sbdinc.wd1.myworkdayjobs.com"}
+    - {name: "The Aerospace Corporation", ats: workday, slug: "aero/external", host: "https://aero.wd5.myworkdayjobs.com"}
+    - {name: "The Toro Company", ats: workday, slug: "ttc/Toro_External_Careers", host: "https://ttc.wd1.myworkdayjobs.com"}
+    - {name: "Vermeer", ats: workday, slug: "vermeer/externalcareersite", host: "https://vermeer.wd5.myworkdayjobs.com"}
+    - {name: "Zurn Elkay Water Solutions", ats: workday, slug: "elkay/Elkay_External", host: "https://elkay.wd1.myworkdayjobs.com"}
+    - {name: "Intel", ats: workday, slug: "intel/external", host: "https://intel.wd1.myworkdayjobs.com"}
+    - {name: "NVIDIA", ats: workday, slug: "nvidia/NVIDIAExternalCareerSite", host: "https://nvidia.wd5.myworkdayjobs.com"}
 
-  # Direct Lever Public ATS Boards
-  lever_boards:
-    - "palantir"
-    - "rethinkrobotics"
+# Keyword-search APIs. Keys go in .env (ADZUNA_APP_ID/ADZUNA_APP_KEY, USAJOBS_API_KEY/USAJOBS_EMAIL);
+# a source with no keys is skipped. Results still pass the filter above and the max_age_days cap.
+keyword_search:
+  queries:
+    - "electrical engineering intern"
+    - "computer engineering intern"
+    - "firmware intern"
+    - "embedded intern"
+    - "hardware engineer intern"
+    - "FPGA intern"
+    - "ASIC intern"
+    - "software engineering intern"
+    - "student trainee engineering"
+
+# Alert when text mentioning `keyword` on a page changes (first run records a baseline silently)
+page_watchers:
+  - name: "NVIDIA Ignite"
+    company: "NVIDIA"
+    url: "https://www.nvidia.com/en-us/about-nvidia/careers/university-recruiting/"
+    keyword: "ignite"
