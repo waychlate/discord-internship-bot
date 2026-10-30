@@ -110,3 +110,10 @@ def format_posted_date(date_raw: Optional[str]) -> Tuple[str, Optional[str]]:
     # Fallback to whatever string was scraped
     return date_str, datetime.now(timezone.utc).isoformat()
 
+
+
+TIER_LABELS = {1: "🔧 Embedded / Firmware (top tier)", 2: "🔌 Hardware / FPGA / Edge-ML"}
+
+
+def tier_label(tier: int) -> str:
+    return TIER_LABELS.get(tier, "⭐ Watched")

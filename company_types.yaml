@@ -1,0 +1,170 @@
+# lowercase company name (suffixes like Inc/LLC/Corp are stripped before lookup) -> type
+# types: defense, aerospace, big-tech, semiconductor, startup, health, automotive, industrial, consumer-hw, other
+
+# config.yaml sources.companies
+amca: industrial
+anduril: defense
+astranis: aerospace
+efficient computer: startup
+freeform: startup
+general matter: startup
+hp iq: startup
+k2 space: aerospace
+mill: startup
+muon space: aerospace
+rocket lab usa: aerospace
+rocket lab: aerospace
+verkada: consumer-hw
+spacex: aerospace
+neuralink: health
+tenstorrent: semiconductor
+cesiumastro: aerospace
+palantir: defense
+allen control systems: defense
+antares nuclear: startup
+apex: aerospace
+bedrock robotics: startup
+gecko robotics: industrial
+northwood space: aerospace
+revel: automotive
+saronic: defense
+solidigm: semiconductor
+ttp: other
+draper: defense
+ensign-bickford aerospace & defense: defense
+ensign-bickford industries: industrial
+marvell: semiconductor
+marvell technology: semiconductor
+motorola: industrial
+motorola solutions: industrial
+northrop grumman: defense
+northrop: defense
+stryker: health
+aerovironment: defense
+applied materials: semiconductor
+blue origin: aerospace
+booz allen: defense
+booz allen hamilton: defense
+ciena: industrial
+ge aerospace: aerospace
+ge healthcare: health
+ge vernova: industrial
+general motors: automotive
+gm: automotive
+globalfoundries: semiconductor
+hitachi: industrial
+irhythm technologies: health
+irhythm: health
+jabil: industrial
+johnson & johnson: health
+leidos: defense
+moog: aerospace
+neogen: health
+nxp semiconductors: semiconductor
+nxp: semiconductor
+oshkosh: automotive
+philips: health
+saab: defense
+semtech: semiconductor
+sierra nevada: defense
+sierra nevada corporation: defense
+stanley black & decker: industrial
+the aerospace corporation: aerospace
+aerospace corporation: aerospace
+the toro company: industrial
+toro: industrial
+vermeer: industrial
+zurn elkay water solutions: industrial
+intel: semiconductor
+nvidia: semiconductor
+
+# other embedded / hardware employers
+tesla: automotive
+apple: big-tech
+google: big-tech
+alphabet: big-tech
+microsoft: big-tech
+amazon: big-tech
+meta: big-tech
+garmin: consumer-hw
+analog devices: semiconductor
+texas instruments: semiconductor
+microchip: semiconductor
+microchip technology: semiconductor
+medtronic: health
+lockheed martin: defense
+lockheed: defense
+rtx: defense
+raytheon: defense
+l3harris: defense
+l3harris technologies: defense
+general dynamics: defense
+bae systems: defense
+ge: industrial
+general electric: industrial
+honeywell: industrial
+boeing: aerospace
+collins aerospace: aerospace
+pratt & whitney: aerospace
+bosch: automotive
+qualcomm: semiconductor
+amd: semiconductor
+advanced micro devices: semiconductor
+broadcom: semiconductor
+micron: semiconductor
+micron technology: semiconductor
+infineon: semiconductor
+stmicroelectronics: semiconductor
+onsemi: semiconductor
+renesas: semiconductor
+skyworks: semiconductor
+qorvo: semiconductor
+cirrus logic: semiconductor
+lattice semiconductor: semiconductor
+amd xilinx: semiconductor
+xilinx: semiconductor
+arm: semiconductor
+synopsys: semiconductor
+cadence: semiconductor
+kla: semiconductor
+lam research: semiconductor
+tsmc: semiconductor
+samsung: consumer-hw
+skydio: defense
+shield ai: defense
+ford: automotive
+ford motor: automotive
+rivian: automotive
+lucid: automotive
+lucid motors: automotive
+stellantis: automotive
+toyota: automotive
+waymo: automotive
+zoox: automotive
+john deere: industrial
+deere: industrial
+caterpillar: industrial
+rockwell automation: industrial
+siemens: industrial
+abb: industrial
+emerson: industrial
+schneider electric: industrial
+boston scientific: health
+abbott: health
+dexcom: health
+intuitive surgical: health
+ge healthcare technologies: health
+sonos: consumer-hw
+logitech: consumer-hw
+dell: consumer-hw
+hp: consumer-hw
+lenovo: consumer-hw
+cisco: big-tech
+ibm: big-tech
+oracle: big-tech
+nasa: aerospace
+jpl: aerospace
+relativity space: aerospace
+firefly aerospace: aerospace
+joby aviation: aerospace
+zipline: startup

@@ -4,12 +4,14 @@ import os
 import signal
 import sys
 import time
-from typing import Dict, List
+from datetime import datetime
+from typing import Dict, List, Optional
 import yaml
 from dotenv import load_dotenv
 
 from src.dates import age_days, is_fresh
 from src.db import Database
+from src.digest import run_digest
 from src.filter import ECEFilter
 from src.models import JobPosting
 from src.notifier import DiscordNotifier
@@ -25,7 +27,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logger = logging.getLogger("ece_scraper")
+logger = logging.getLogger("internship_radar")
 
 running = True
 
@@ -74,6 +76,16 @@ def init_sources(config: Dict) -> List[BaseSource]:
     return sources
 
 
+def make_typer(config: Dict, db_path: str):
+    """CompanyTyper if available; labeling is optional, so any import/init failure just disables it."""
+    try:
+        from src.company_types import CompanyTyper
+        return CompanyTyper(config, db_path)
+    except Exception as e:
+        logger.warning(f"Company type labeling disabled: {type(e).__name__}: {e}")
+        return None
+
+
 def drip_gap(pending: int, config: Dict) -> float:
     """Seconds to wait before the next message so the queue drains within drip_window_minutes.
     Small queues wait at most drip_max_gap_seconds; big ones are stretched to fit the window."""
@@ -110,6 +122,7 @@ def run_scrape_cycle(
     notifier: DiscordNotifier,
     config: Dict,
     dry_run: bool = False,
+    typer=None,
 ):
     logger.info("================ Starting Scrape Cycle ================")
     total_found = 0
@@ -141,14 +154,21 @@ def run_scrape_cycle(
 
                 if dry_run:
                     logger.info(
-                        f"[DRY-RUN MATCH] {job.company} - {job.title} | Age: {age_days(job.date_posted)} days | Tags: {matched_tags} | URL: {job.url}"
+                        f"[DRY-RUN MATCH] {job.company} - {job.title} | Tier: {job.tier} | Age: {age_days(job.date_posted)} days | Tags: {matched_tags} | URL: {job.url}"
                     )
                     continue
 
                 if db.is_duplicate(job):
                     continue
-                # Quiet seed indexes without alerting; otherwise queue it for the drip sender
-                db.save_job(job, status="seen" if quiet_seed else "pending")
+                # Quiet seed indexes without alerting. Tier 2 waits for the daily digest; tier 1 (and
+                # pre-approved watcher alerts, tier 0) is queued for the drip sender = instant ping.
+                if quiet_seed:
+                    status = "seen"
+                else:
+                    status = "digest" if job.tier == 2 else "pending"
+                    if typer:
+                        job.company_type = typer.label(job.company)
+                db.save_job(job, status=status)
                 total_new += 1
         except Exception as e:
             logger.error(f"Error processing source {source.name}: {e}", exc_info=True)
@@ -167,10 +187,11 @@ def run_scrape_cycle(
 def main():
     load_dotenv()
 
-    parser = argparse.ArgumentParser(description="ECE Internship Discord Scraper & Notifier")
+    parser = argparse.ArgumentParser(description="Internship Radar: embedded/firmware internship alerts for Discord")
     parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
     parser.add_argument("--dry-run", action="store_true", help="Run once without saving to DB or sending webhooks")
     parser.add_argument("--test-webhook", action="store_true", help="Send a test embed to Discord and exit")
+    parser.add_argument("--digest-now", action="store_true", help="Send the daily digest now and exit (with --dry-run: print it)")
     parser.add_argument("--once", action="store_true", help="Run a single scrape cycle and exit")
     args = parser.parse_args()
 
@@ -189,11 +210,15 @@ def main():
             logger.error("❌ Failed to send test message. Check your DISCORD_WEBHOOK_URL in .env")
             sys.exit(1)
 
+    if args.digest_now:
+        sys.exit(0 if run_digest(db, notifier, dry_run=args.dry_run) else 1)
+
+    typer = make_typer(config, db_path)
     sources = init_sources(config)
     logger.info(f"Initialized {len(sources)} scraping source(s).")
 
     if args.dry_run or args.once:
-        run_scrape_cycle(sources, ece_filter, db, notifier, config, dry_run=args.dry_run)
+        run_scrape_cycle(sources, ece_filter, db, notifier, config, dry_run=args.dry_run, typer=typer)
         while args.once and not args.dry_run and send_next_batch(db, notifier, config):
             time.sleep(1.5)  # --once flushes the whole queue immediately instead of dripping
         return
@@ -211,11 +236,13 @@ def main():
 
     # Scraping and alert sending run on separate timers: cycles enqueue, the drip sender
     # paces Discord alerts (see drip_gap).
-    next_cycle = next_send = 0.0
+    next_cycle = next_send = next_digest_try = 0.0
+    digest_hour = int(config.get("digest", {}).get("hour_local", 9))
+    last_digest_day: Optional[str] = None
     while running:
         now = time.monotonic()
         if now >= next_cycle:
-            run_scrape_cycle(sources, ece_filter, db, notifier, config)
+            run_scrape_cycle(sources, ece_filter, db, notifier, config, typer=typer)
             next_cycle = time.monotonic() + interval_minutes * 60
             logger.info(f"Next scrape cycle in {interval_minutes} minutes.")
         if now >= next_send:
@@ -223,9 +250,17 @@ def main():
                 next_send = time.monotonic() + drip_gap(db.pending_count(), config)
             elif db.pending_count():
                 next_send = time.monotonic() + 60  # send failed; retry in a minute
+        # Daily digest at digest_hour local time (container TZ). After a restart past that hour it runs
+        # again, but only with not-yet-digested jobs, so nothing repeats.
+        local = datetime.now()
+        if local.hour >= digest_hour and last_digest_day != local.date().isoformat() and now >= next_digest_try:
+            if run_digest(db, notifier):
+                last_digest_day = local.date().isoformat()
+            else:
+                next_digest_try = time.monotonic() + 15 * 60
         time.sleep(1)
 
-    logger.info("ECE Scraper daemon stopped gracefully.")
+    logger.info("Internship Radar daemon stopped gracefully.")
 
 
 if __name__ == "__main__":

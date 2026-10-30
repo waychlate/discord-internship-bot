@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from src.models import JobPosting
 
@@ -48,6 +48,12 @@ class Database:
                 cursor.execute("ALTER TABLE seen_jobs ADD COLUMN dedup_key TEXT")
             if "date_posted" not in cols:
                 cursor.execute("ALTER TABLE seen_jobs ADD COLUMN date_posted TEXT")
+            if "tier" not in cols:
+                cursor.execute("ALTER TABLE seen_jobs ADD COLUMN tier INTEGER DEFAULT 0")
+            if "company_type" not in cols:
+                cursor.execute("ALTER TABLE seen_jobs ADD COLUMN company_type TEXT DEFAULT ''")
+            if "digested_at" not in cols:  # set once a job has appeared in a daily digest
+                cursor.execute("ALTER TABLE seen_jobs ADD COLUMN digested_at TEXT")
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_seen_jobs_company ON seen_jobs(company);"
             )
@@ -76,8 +82,8 @@ class Database:
             cursor.execute(
                 """
                 INSERT OR IGNORE INTO seen_jobs 
-                (id, company, title, url, location, source, matched_keywords, terms, sponsorship, first_seen_at, status, date_posted, dedup_key)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, company, title, url, location, source, matched_keywords, terms, sponsorship, first_seen_at, status, date_posted, dedup_key, tier, company_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job.id,
@@ -93,6 +99,8 @@ class Database:
                     status,
                     job.date_posted,
                     job.dedup_key,
+                    job.tier,
+                    job.company_type or "",
                 ),
             )
             conn.commit()
@@ -115,21 +123,41 @@ class Database:
             rows = conn.execute(
                 "SELECT * FROM seen_jobs WHERE status = 'pending' ORDER BY first_seen_at, rowid LIMIT ?", (limit,)
             ).fetchall()
-        return [
-            JobPosting(
-                company=r["company"],
-                title=r["title"],
-                url=r["url"],
-                location=r["location"] or "Not specified",
-                source=r["source"] or "Unknown",
-                date_posted=r["date_posted"] or None,
-                matched_keywords=[k for k in (r["matched_keywords"] or "").split(", ") if k],
-                terms=r["terms"] or None,
-            )
-            for r in rows
-        ]
+        return [_row_to_job(r) for r in rows]
+
+    def undigested_recent(self, hours: float = 24) -> List[JobPosting]:
+        """Alerted or digest-only jobs first seen in the last `hours` that no digest has included yet."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        with self.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM seen_jobs WHERE status != 'seen' AND digested_at IS NULL AND first_seen_at >= ? "
+                "ORDER BY tier = 0, tier, first_seen_at",
+                (cutoff,),
+            ).fetchall()
+        return [_row_to_job(r) for r in rows]
+
+    def mark_digested(self, job_ids: List[str]):
+        now = datetime.now(timezone.utc).isoformat()
+        with self.get_connection() as conn:
+            conn.executemany("UPDATE seen_jobs SET digested_at = ? WHERE id = ?", [(now, i) for i in job_ids])
+            conn.commit()
 
     def mark_sent(self, job_id: str, status: str = "sent"):
         with self.get_connection() as conn:
             conn.execute("UPDATE seen_jobs SET status = ? WHERE id = ?", (status, job_id))
             conn.commit()
+
+
+def _row_to_job(r: sqlite3.Row) -> JobPosting:
+    return JobPosting(
+        company=r["company"],
+        title=r["title"],
+        url=r["url"],
+        location=r["location"] or "Not specified",
+        source=r["source"] or "Unknown",
+        date_posted=r["date_posted"] or None,
+        matched_keywords=[k for k in (r["matched_keywords"] or "").split(", ") if k],
+        terms=r["terms"] or None,
+        tier=r["tier"] or 0,
+        company_type=r["company_type"] or "",
+    )

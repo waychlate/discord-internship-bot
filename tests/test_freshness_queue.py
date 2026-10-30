@@ -44,9 +44,9 @@ class TestFilter(unittest.TestCase):
         "always_include_regex": ["nvidia.*ignite"],
     }}
 
-    def test_software_and_always_include(self):
+    def test_software_not_matched_and_always_include(self):
         f = ECEFilter(self.cfg)
-        self.assertTrue(f.evaluate(JobPosting("Acme", "Software Engineer Intern", "u"))[0])
+        self.assertFalse(f.evaluate(JobPosting("Acme", "Software Engineer Intern", "u"))[0])  # SWE dropped
         self.assertTrue(f.evaluate(JobPosting("NVIDIA", "2027 Ignite Program", "u"))[0])
         self.assertFalse(f.evaluate(JobPosting("Acme", "Ignite Program", "u"))[0])
         self.assertFalse(f.evaluate(JobPosting("Acme", "Senior Software Engineer Intern", "u"))[0])

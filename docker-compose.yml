@@ -1,17 +1,23 @@
 services:
-  ece-scraper:
+  internship_radar:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ece_job_radar
+      network: host  # bridge network has no DNS on this host
+    network_mode: host
+    container_name: internship_radar
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      # Local time for the daily digest (digest.hour_local in config.yaml)
+      - TZ=America/New_York
     volumes:
       # Persist SQLite database across container restarts & updates
       - ./data:/app/data
       # Mount configuration so you can tweak keywords/sources without rebuilding
       - ./config.yaml:/app/config.yaml
+      - ./company_types.yaml:/app/company_types.yaml
     logging:
       driver: "json-file"
       options:

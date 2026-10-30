@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import requests
 
-from src.formatters import extract_season, format_posted_date
+from src.formatters import extract_season, format_posted_date, tier_label
 from src.models import JobPosting
 
 logger = logging.getLogger(__name__)
@@ -17,13 +17,10 @@ class DiscordNotifier:
         notif_cfg = config.get("notification", {})
         
         self.webhook_url = webhook_url or os.getenv("DISCORD_WEBHOOK_URL", "")
-        self.bot_name = notif_cfg.get("bot_name", "ECE Job Radar")
+        self.bot_name = notif_cfg.get("bot_name", "Internship Radar")
         self.avatar_url = notif_cfg.get("avatar_url", "")
         self.embed_color = notif_cfg.get("embed_color", 3066993)  # Emerald green default
         self.enable_mention = notif_cfg.get("enable_mention", False)
-        self.software_keywords = {
-            k.lower().strip() for k in config.get("filter", {}).get("software_keywords", [])
-        }
         self.role_id = os.getenv("DISCORD_ROLE_ID") or notif_cfg.get("role_id_to_mention", "")
 
     def is_configured(self) -> bool:
@@ -47,6 +44,18 @@ class DiscordNotifier:
         payload["embeds"] = [p["embeds"][0] for p in payloads]
         return self._post_webhook(payload)
 
+    def send_text(self, content: str) -> bool:
+        """Plain message (<= 2000 chars). Mentions disabled so LLM text can't ping @everyone."""
+        if not self.is_configured():
+            logger.warning("Discord webhook URL is not configured. Skipping message.")
+            return False
+        return self._post_webhook({
+            "username": self.bot_name,
+            "avatar_url": self.avatar_url,
+            "content": content,
+            "allowed_mentions": {"parse": []},
+        })
+
     def send_test_message(self) -> bool:
         """Sends a verification test embed to the Discord webhook."""
         if not self.is_configured():
@@ -58,15 +67,15 @@ class DiscordNotifier:
             "avatar_url": self.avatar_url,
             "embeds": [
                 {
-                    "title": "⚡ ECE Job Radar Connected Successfully",
-                    "description": "Your Discord webhook is active! You will receive instant notifications whenever new ECE, Embedded, FPGA, or Hardware internship postings are discovered.",
+                    "title": "⚡ Internship Radar Connected Successfully",
+                    "description": "Your Discord webhook is active! You will receive instant notifications whenever new embedded/firmware internship postings (hardware/FPGA/edge-ML in the daily digest) are discovered.",
                     "color": self.embed_color,
                     "fields": [
                         {"name": "Status", "value": "🟢 Online & Monitoring", "inline": True},
                         {"name": "Sources", "value": "GitHub Curated Repos & ATS Feeds", "inline": True},
                     ],
                     "footer": {
-                        "text": "ECE Job Radar • witchs.me"
+                        "text": "Internship Radar • witchs.me"
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
@@ -84,18 +93,18 @@ class DiscordNotifier:
             "avatar_url": self.avatar_url,
             "embeds": [
                 {
-                    "title": "🟢 ECE Job Radar Initialized",
+                    "title": "🟢 Internship Radar Initialized",
                     "description": (
-                        f"Indexed **{seeded_count}** existing ECE internship positions (from {total_scraped} total postings).\n\n"
+                        f"Indexed **{seeded_count}** existing matching internship positions (from {total_scraped} total postings).\n\n"
                         f"Database is seeded! Going forward, **you will only receive alerts for new openings**."
                     ),
                     "color": self.embed_color,
                     "fields": [
-                        {"name": "Seeded ECE Postings", "value": str(seeded_count), "inline": True},
+                        {"name": "Seeded Postings", "value": str(seeded_count), "inline": True},
                         {"name": "Monitoring Mode", "value": "⚡ Instant Alerts for New Jobs", "inline": True},
                     ],
                     "footer": {
-                        "text": "ECE Job Radar • Monitoring Active"
+                        "text": "Internship Radar • Monitoring Active"
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 }
@@ -106,10 +115,6 @@ class DiscordNotifier:
     def _build_embed_payload(self, job: JobPosting) -> Dict:
         tags_str = ", ".join([f"`{kw}`" for kw in job.matched_keywords]) if job.matched_keywords else "N/A"
         
-        tags = job.matched_keywords
-        is_swe = bool(tags) and all(t in self.software_keywords for t in tags)
-        track = "💻 SWE" if is_swe else "⚡ EE/CPE"
-
         season_str = extract_season(
             title=job.title,
             terms=job.terms,
@@ -124,8 +129,9 @@ class DiscordNotifier:
             {"name": "📍 Location", "value": job.location or "Not specified", "inline": True},
             {"name": "📅 Season / Term", "value": season_str, "inline": True},
             {"name": "🕒 Posted", "value": date_display, "inline": True},
-            {"name": "🧭 Track", "value": track, "inline": True},
-            {"name": "🏷️ Matched Tags", "value": tags_str, "inline": False},
+            {"name": "🧭 Tier", "value": tier_label(job.tier), "inline": True},
+            {"name": "🏷️ Company Type", "value": job.company_type or "unknown", "inline": True},
+            {"name": "🔎 Matched Tags", "value": tags_str, "inline": False},
             {"name": "📡 Source", "value": job.source, "inline": True},
         ]
 
@@ -136,13 +142,13 @@ class DiscordNotifier:
             "fields": fields,
             "timestamp": iso_timestamp,
             "footer": {
-                "text": f"ECE Job Radar • ID: {job.id}"
+                "text": f"Internship Radar • ID: {job.id}"
             },
         }
 
         content = ""
         if self.enable_mention and self.role_id:
-            content = f"<@&{self.role_id}> New ECE internship posting found!"
+            content = f"<@&{self.role_id}> New internship posting found!"
 
         payload = {
             "username": self.bot_name,
@@ -166,7 +172,8 @@ class DiscordNotifier:
                     logger.error(f"Failed to send webhook: HTTP {res.status_code} - {res.text}")
                     return False
             except Exception as e:
-                logger.error(f"Error posting to Discord Webhook: {e}")
+                # type only: requests exceptions embed the URL, which contains the webhook token
+                logger.error(f"Error posting to Discord Webhook: {type(e).__name__}")
                 time.sleep(1)
 
         return False

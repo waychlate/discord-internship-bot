@@ -1,5 +1,7 @@
 import unittest
-from src.formatters import extract_season, format_posted_date
+from src.formatters import extract_season, format_posted_date, tier_label
+from src.models import JobPosting
+from src.notifier import DiscordNotifier
 
 
 class TestFormatters(unittest.TestCase):
@@ -39,6 +41,14 @@ class TestFormatters(unittest.TestCase):
         display, iso_val = format_posted_date("2026-08-15T14:20:00Z")
         self.assertIn("Aug 15, 2026", display)
         self.assertEqual(iso_val, "2026-08-15T14:20:00+00:00")
+
+    def test_embed_shows_tier_and_company_type(self):
+        job = JobPosting("Acme", "Firmware Intern", "https://x/1", tier=1, company_type="defense")
+        fields = {f["name"]: f["value"] for f in DiscordNotifier({})._build_embed_payload(job)["embeds"][0]["fields"]}
+        self.assertEqual(fields["🧭 Tier"], tier_label(1))
+        self.assertIn("Embedded", fields["🧭 Tier"])
+        self.assertEqual(fields["🏷️ Company Type"], "defense")
+        self.assertNotIn("🧭 Track", fields)
 
 
 if __name__ == "__main__":

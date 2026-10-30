@@ -20,6 +20,8 @@ class JobPosting:
     matched_keywords: List[str] = field(default_factory=list)
     terms: Optional[str] = None  # e.g. "Summer 2025", "Fall 2025"
     sponsorship: Optional[str] = None
+    tier: int = 0  # 1 = embedded/firmware (instant ping), 2 = hardware/FPGA/edge-ML (digest only), 0 = no match
+    company_type: str = ""  # e.g. defense, big-tech, semiconductor, startup, health, aerospace, automotive, other
     pre_approved: bool = False  # skip keyword filter (e.g. page-watcher alerts)
     created_at: str = field(default_factory=utc_now_iso)
 

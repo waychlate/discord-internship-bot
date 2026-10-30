@@ -1,8 +1,16 @@
-# ⚡ ECE Internship Discord Scraper & Radar
+# 🔧 Internship Radar
 
 An automated, lightweight background scraper that monitors GitHub early-career repositories and company ATS job boards (Greenhouse, Lever) for **Electrical & Computer Engineering (ECE)** internships, co-ops, and student roles.
 
-When a new matching position is discovered, it dispatches an instant, rich embed notification directly to your Discord channel via Webhook.
+Tuned for an EE student hunting **embedded / firmware** internships:
+
+- **Tier 1 (🔧 embedded/firmware)**: instant Discord ping (drip-paced embed).
+- **Tier 2 (🔌 hardware/FPGA/edge-ML)**: no ping; saved for the daily digest.
+- SWE-only postings are no longer matched.
+- Each alert shows tier, company type (defense, semiconductor, startup, ...), season, location, link.
+- **Daily digest** at `digest.hour_local` (default 9, container `TZ`): every new posting from the last 24h in ONE message,
+  ranked best-fit first with a one-line "why it fits" by Gemini when `GEMINI_API_KEY` is set, otherwise a plain list.
+  Postings never repeat across digests; nothing is sent on empty days.
 
 ---
 
@@ -22,7 +30,6 @@ When a new matching position is discovered, it dispatches an instant, rich embed
   - A page watcher that pings when the NVIDIA Ignite page changes.
 - **🕑 Fresh only**: postings older than `scraper.max_age_days` (default 2) are ignored.
 - **💧 Drip alerts**: new matches are queued and sent one by one (never dropped); a large backlog is spread over `drip_window_minutes`.
-- **💻 EE/CPE + SWE**: embeds are tagged `EE/CPE` or `SWE`.
 - **🐳 Docker & Home Server Ready**: Packaged for 24/7 low-resource background operation (`restart: unless-stopped`).
 - **🛡️ Outbound Only**: Requires no open router ports or static public IPs.
 
@@ -36,7 +43,7 @@ When a new matching position is discovered, it dispatches an instant, rich embed
 # Copy example environment configuration
 cp .env.example .env
 
-# Edit .env and paste your Discord Webhook URL
+# Edit .env: DISCORD_WEBHOOK_URL (required), GEMINI_API_KEY / GEMINI_MODEL (optional), TZ
 nano .env
 ```
 
@@ -60,6 +67,15 @@ python -m src.main --test-webhook
 python -m src.main --dry-run
 ```
 
+### 5. Daily Digest On Demand
+
+```bash
+python -m src.main --digest-now --dry-run   # print today's digest, send nothing, mark nothing
+python -m src.main --digest-now             # send it now (marks those postings as digested)
+# in Docker:
+docker compose exec internship_radar python -m src.main --digest-now --dry-run
+```
+
 ---
 
 ## 🏠 Home Server Deployment (Docker Compose)
@@ -72,7 +88,7 @@ Clone this repository or copy the directory to your server (e.g., via `scp` or `
 
 ```bash
 ssh user@your-home-server
-cd ~/discord-scraper
+cd ~/find-a-job
 ```
 
 ### 2. Configure `.env`
@@ -113,6 +129,7 @@ docker compose restart
 
 You can modify `config.yaml` at any time without recompiling the Docker container (it is volume-mounted):
 
+- **`digest.hour_local`**: hour (0-23, container `TZ`) for the daily digest (default: `9`).
 - **`scraper.interval_minutes`**: How often the scraper polls for new positions (default: `30` mins).
 - **`filter.inclusion_keywords`**: Add or remove specialized subfield keywords.
 - **`filter.exclusion_keywords`**: Filter out seniority levels or unrelated roles (e.g. `frontend`, `marketing`, `senior`).

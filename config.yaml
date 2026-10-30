@@ -22,7 +22,7 @@ scraper:
 
 notification:
   # Webhook username displayed on Discord
-  bot_name: "ECE Job Radar"
+  bot_name: "Internship Radar"
   # Optional custom avatar URL (e.g. hosted on your domain witchs.me or public image)
   avatar_url: "https://raw.githubusercontent.com/walkxcode/dashboard-icons/main/png/discord.png"
   # Embed color in decimal (e.g., 5793266 for blurple, 3066993 for emerald green, 15844367 for gold)
@@ -33,22 +33,30 @@ notification:
   role_id_to_mention: ""
 
 filter:
-  # At least one inclusion keyword MUST be present in the title (or description) for the job to be selected
-  inclusion_keywords:
-    # Firmware & Embedded Systems
+  # Tier 1 (instant ping): embedded/firmware. Matched against the TITLE only.
+  tier1_keywords:
     - "embedded"
     - "firmware"
     - "rtos"
+    - "freertos"
+    - "zephyr"
     - "microcontroller"
+    - "mcu"
     - "device driver"
     - "bare metal"
+    - "bare-metal"
     - "board support package"
     - "bsp"
     - "arm cortex"
     - "stm32"
     - "esp32"
+    - "low-level"
+    - "low level"
 
-    # Digital Logic & Hardware / Silicon Design
+  # Tier 2 (digest): FPGA/ASIC/digital, hardware/PCB/power/analog/RF, edge-ML/robotics/controls/DSP.
+  # Matched against title, company, location and terms.
+  tier2_keywords:
+    # Digital logic & silicon
     - "fpga"
     - "asic"
     - "rtl"
@@ -58,65 +66,113 @@ filter:
     - "digital design"
     - "vlsi"
     - "silicon design"
+    - "silicon validation"
     - "soc design"
     - "chip design"
     - "physical design"
-
-    # Computer Architecture & Systems
+    - "design verification"
     - "computer architecture"
-    - "computer engineering"
-    - "systems engineering"
     - "gpu architecture"
     - "cpu architecture"
     - "risc-v"
-    - "dsp"
-    - "digital signal processing"
-
-    # Electrical, Hardware & PCB
-    - "hardware engineer"
-    - "hardware engineering"
-    - "electrical engineer"
-    - "electrical engineering"
-    - "ece intern"
+    # Hardware, PCB, power, analog, RF
+    - "hardware"
+    - "electrical"
+    - "computer engineering"
+    - "ece"
     - "pcb"
+    - "board design"
+    - "board bring-up"
     - "schematic"
     - "altium"
     - "analog"
+    - "mixed-signal"
     - "power electronics"
-    - "rf engineer"
+    - "rf"
     - "signal integrity"
-
-    # Test, Validation & Robotics
-    - "silicon validation"
-    - "hardware test"
     - "post-silicon"
-    - "board bring-up"
+    - "avionics"
+    # Edge ML, robotics, controls, DSP
+    - "dsp"
+    - "signal processing"
+    - "edge ai"
+    - "edge ml"
+    - "tinyml"
     - "robotics"
     - "mechatronics"
-    - "controls engineer"
+    - "controls"
+    - "control systems"
     - "autonomous systems"
 
-  # Software roles (CPE students). Matched like inclusion keywords; embeds tagged SWE if only these match.
-  software_keywords:
-    - "software engineer"
-    - "software engineering"
-    - "software developer"
-    - "software development"
-    - "software intern"
-    - "backend"
-    - "back-end"
-    - "full stack"
-    - "full-stack"
-    - "systems software"
-    - "embedded software"
-    - "devops"
-    - "site reliability"
-    - "compiler"
-    - "operating system"
-    - "kernel"
-    - "networking"
+  # Only these seasons alert. Postings with no season/year are accepted; any other season or year rejects.
+  accepted_seasons: ["summer 2027", "fall 2027"]
 
-  # "company title" regexes that always alert (skip keyword/role checks). NVIDIA Ignite is a freshman/sophomore program.
+  # Location containing any of these (whole word) is rejected as non-US. Unknown/unspecified is accepted.
+  # Ambiguous names with US twins (London, Dublin, Cambridge, Melbourne, Paris) are left out on purpose.
+  non_us_markers:
+    - "canada"
+    - "ontario"
+    - "quebec"
+    - "british columbia"
+    - "toronto"
+    - "vancouver"
+    - "montreal"
+    - "ottawa"
+    - "waterloo, on"
+    - "mexico"
+    - "guadalajara"
+    - "india"
+    - "bangalore"
+    - "bengaluru"
+    - "hyderabad"
+    - "pune"
+    - "chennai"
+    - "noida"
+    - "uk"
+    - "united kingdom"
+    - "england"
+    - "scotland"
+    - "ireland"
+    - "germany"
+    - "munich"
+    - "berlin"
+    - "france"
+    - "netherlands"
+    - "eindhoven"
+    - "belgium"
+    - "switzerland"
+    - "zurich"
+    - "sweden"
+    - "poland"
+    - "spain"
+    - "italy"
+    - "israel"
+    - "tel aviv"
+    - "china"
+    - "shanghai"
+    - "beijing"
+    - "shenzhen"
+    - "taiwan"
+    - "taipei"
+    - "hsinchu"
+    - "japan"
+    - "tokyo"
+    - "korea"
+    - "seoul"
+    - "singapore"
+    - "malaysia"
+    - "penang"
+    - "vietnam"
+    - "philippines"
+    - "australia"
+    - "sydney"
+    - "brazil"
+    - "emea"
+    - "apac"
+    - "latam"
+    - "europe"
+
+  # "company title" regexes that always alert as tier 1 (skip all other checks). NVIDIA Ignite is a freshman/sophomore program.
   always_include_regex:
     - "nvidia.*ignite"
 
@@ -129,7 +185,7 @@ filter:
     - "student"
     - "apprentice"
 
-  # If any exclusion keyword is found, the job is ignored even if it matches an inclusion keyword
+  # If any exclusion keyword is found, the job is ignored even if it matches a tier keyword
   exclusion_keywords:
     - "senior"
     - "principal"
@@ -137,9 +193,14 @@ filter:
     - "staff"
     - "director"
     - "manager"
+    - "phd"
+    - "ph.d"
+    - "doctoral"
+    - "postdoc"
+    - "master's"
+    - "mba"
+    - "new grad"
     - "frontend"
-    - "front-end"
-    - "front end"
     - "marketing"
     - "sales"
     - "recruiter"
